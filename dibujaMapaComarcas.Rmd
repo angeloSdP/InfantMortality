@@ -1,0 +1,91 @@
+---
+title: "Comarcas"
+author: "Angelo Santana"
+date: '2022-06-02'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+# Descarga del mapa:
+# https://datos.canarias.es/catalogos/estadisticas/dataset/comarcas-de-canarias-delimitaciones-territoriales-para-fines-estadisticos
+
+```
+
+```{r}
+library(rgdal)
+library(RColorBrewer)
+library(ggspatial)
+library(tidyverse)
+library(sf)
+library(openxlsx)
+```
+
+
+```{r}
+comarcasCanarias <- readOGR("mapaComarcas/comarcas_20170101.shp")
+etiquetasComarcas <- read.xlsx("etiquetasComarcas.xlsx")
+canarias <- st_as_sf(comarcasCanarias)
+tasas <- read.xlsx("Rho_14062022.xlsx") %>% 
+  full_join(etiquetasComarcas) %>% #Añado etiquetas de comarca como vienen en el mapa
+  pivot_longer(Rho_03.mean:Rho_16.mean, names_to = "Year", values_to="Rho0") %>% 
+  mutate(Year=factor(Year,levels=c("Rho_03.mean","Rho_16.mean"),
+                     labels=c("Period 1994-2003","Period 2004-2016")),
+         Rho=cut(Rho0,breaks=seq(0,4,by=0.25))) %>% 
+  select(ETIQUETA,Year,Rho)
+canarias <- canarias %>% full_join(tasas) 
+```
+
+
+```{r}
+# Fijo la paleta para que las tasas menores que 1 queden en verde y de 1 en adelante 
+# vayan siendo cada vez más rojas:
+coloresMapa <- colorRampPalette(brewer.pal(11,"RdYlGn"))(11)[c(10:8,6:1)]
+# Dibujo el mapa:
+ggplot() +
+  layer_spatial(canarias, aes(fill = Rho), col = 'black', show.legend = TRUE) +
+  coord_sf(crs=sf::st_crs(4326)) +
+  labs(x = NULL,  y = NULL, fill=expression(rho)) +
+  scale_fill_manual(values=coloresMapa) +
+#  scale_fill_brewer(palette="RdYlGn", direction=-1) +
+  theme(
+    legend.position = "right",#c(0.9, 0.85),
+    legend.text.align = 0,
+    legend.background = element_rect(fill = alpha('white', 0.0)),
+    legend.text = element_text(size = 12, hjust = 0, color = "#4e4d47"),
+    legend.title = element_text(size = 14),
+    plot.title = element_text(size = 18, hjust = 0, color = "#4e4d47"),
+    plot.subtitle = element_text(size = 20, hjust = 0.8, face = "italic", color = "#4e4d47"),
+    plot.caption = element_text(size = 9, hjust = 0, color = "#4e4d47"),
+    plot.margin = unit(c(.5,.5,.2,.5), "cm"),
+    panel.border = element_blank(),
+    axis.title=element_blank(),
+    axis.text=element_blank(),
+    axis.ticks=element_blank(),
+    panel.grid.major = element_blank(),
+    panel.background = element_rect(fill = "azure")
+  ) +
+  facet_wrap(~Year,ncol=1) +
+  theme(strip.text = element_text(size = rel(1.2)))
+ggsave("figure4.eps",dpi=1200,width=238,height=180,units = "mm")
+```
+
+```{r}
+library(readxl)
+ims <- read_excel("IM_España (INE).xlsx")
+ims2 <- ims %>% 
+  select(Year=Año, Spain=`Total Nacional`, `Canary Islands`= `05 Canarias`) %>% 
+  mutate(Year=as.numeric(Year))
+ims2 %>% 
+  filter(Year>=1990&Year<2021) %>% 
+  pivot_longer(-Year,names_to = "Region",values_to = "IM") %>% 
+  ggplot(aes(x=Year,y=IM,linetype=Region, group=Region))+
+  geom_line()+
+ # theme_bw() +
+  labs(y="Infant Mortality",color="") +
+  scale_x_continuous(breaks=seq(1990,2020,by=5)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+ggsave(file="figure5.eps",width=119,height=119,units="mm",dpi=1200)
+```
+
